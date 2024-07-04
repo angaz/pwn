@@ -94,7 +94,7 @@
             go_1_22
             golangci-lint
             nix-prefetch
-            nodejs
+            bun
             postgresql_16
           ];
         };
