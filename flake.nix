@@ -41,14 +41,24 @@
       perSystem = { config, pkgs, system, ... }: let
         inherit (gitignore.lib) gitignoreSource;
       in {
-        # Attrs for easyOverlay
         overlayAttrs = {
           inherit (config.packages)
-            pwnAPI;
+            pwnAPI
+            pwnClient
+              ;
         };
 
         packages = {
-          nodeCrawler = pkgs.buildGo122Module {
+          pwnClient = pkgs.stdenvNoCC.mkDerivation {
+            name = "pwn-client";
+            src = ./client/dist;
+            phases = [ "unpackPhase" "installPhase" ];
+            installPhase = ''
+              mkdir -p $out
+              cp $src $out
+            '';
+          };
+          pwnAPI = pkgs.buildGo122Module {
             pname = "pwn-api";
             version = "0.0.0";
 
@@ -136,12 +146,6 @@
               description = "Directory where the databases will exist.";
             };
 
-            snapshotDirname = mkOption {
-              type = types.str;
-              default = "/var/lib/postgres_backups/pwn_api";
-              description = "Snapshots directory name.";
-            };
-
             user = mkOption {
               type = types.str;
               default = "pwnapi";
@@ -165,20 +169,6 @@
               '';
             };
 
-            dailyBackup = mkOption {
-              type = types.bool;
-              default = true;
-              description = ''
-                Takes a daily backup of the Postgres database, saving it to the `snapshotDirname`.
-              '';
-            };
-
-            dailyBackupRetention = mkOption {
-              type = types.int;
-              default = 7;
-              description = "Number of days to keep backups for.";
-            };
-
             api = {
               enable = mkOption {
                 default = true;
@@ -191,37 +181,15 @@
                 default = "127.0.0.1:10000";
                 description = "Listen address for the API server.";
               };
-
-              metricsAddress = mkOption {
-                type = types.str;
-                default = "0.0.0.0:9190";
-                description = "Address on which the metrics server listens. This is NOT added to the firewall.";
-              };
-
-              maxPoolConns = mkOption {
-                type = types.int;
-                default = 16;
-                description = "Max number of open connections to the database.";
-              };
-            };
-
-            postgresql = {
-              enable = mkOption {
-                default = true;
-                type = types.bool;
-                description = "Enables the Postgres database.";
-              };
             };
           };
 
           config = mkIf cfg.enable {
             systemd.services = {
-              pwn-api = mkIf cfg.api.enable {
+              pwnAPI = mkIf cfg.api.enable {
                 description = "PWN API server.";
                 wantedBy = [ "multi-user.target" ];
-                requires = [ "postgresql.service" ];
-                after = [ "network.target" ]
-                  ++ optional cfg.pwnAPI.enable "pwn-api.service";
+                after = [ "network.target" ];
 
                 serviceConfig = {
                   ExecStart =
@@ -244,43 +212,6 @@
                   Restart = "on-failure";
                 };
               };
-
-              pwn-daily-backup = mkIf cfg.dailyBackup {
-                enable = true;
-                description = ''Daily Postgres backup for the PWN API.'';
-                requires = [ "postgresql.service" ];
-                startAt = "*-*-* 00:00:00";
-
-                serviceConfig = {
-                  Type = "oneshot";
-                  Group = "postgres";
-                  User = "postgres";
-                  StateDirectory = "postgres_backups";
-                };
-
-                path = [
-                  pkgs.coreutils
-                  config.services.postgresql.package
-                ];
-
-                script = ''
-                  set -e -o pipefail
-
-                  mkdir -p "${cfg.snapshotDirname}"
-
-                  dump_name="${cfg.snapshotDirname}/pwn_api_$(date --utc +%Y%m%dT%H%M%S).pgdump"
-
-                  pg_dump \
-                    --format custom \
-                    --file "''${dump_name}.part" \
-                    --host /var/run/postgresql \
-                    pwn
-
-                  mv "''${dump_name}.part" "''${dump_name}"
-
-                  find "${cfg.snapshotDirname}" -ctime +${toString cfg.dailyBackupRetention} -name '*.pgdump' -delete
-                '';
-              };
             };
 
             services = {
@@ -291,33 +222,13 @@
                   cfg.nginx
                   {
                     locations = {
-                      "/api" = {
-                        proxyPass = "http://pwnAPI/";
+                      "/api/" = {
+                        proxyPass = "http://pwnAPI/api/";
                       };
-                    };
-                  }
-                ];
-              };
-              postgresql = mkIf cfg.postgresql.enable {
-                enable = true;
-                enableJIT = true;
-                package = pkgs.postgresql_16;
-                settings = {
-                  max_connections = (cfg.maxPoolConns) * 1.15;
-                  shared_preload_libraries = concatStringsSep "," [
-                    "pg_stat_statements"
-                  ];
-
-                  # Performance tuning.
-                  effective_io_concurrency = 200;
-                };
-                ensureDatabases = [ "pwn" ];
-                ensureUsers = [
-                  {
-                    name = "pwn";
-                    ensureDBOwnership = true;
-                    ensureClauses = {
-                      login = true;
+                      "/" = {
+                        root = "${pkgs.pwnClient}";
+                        autoIndex = true;
+                      };
                     };
                   }
                 ];
