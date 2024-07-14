@@ -60,18 +60,6 @@ const (
 	AssetCategoryERC1155 AssetCategory = "ERC1155"
 )
 
-type Asset struct {
-	Name     string        `json:"name"`
-	Ticker   string        `json:"ticker"`
-	LogoURL  string        `json:"logo_url"`
-	Price    string        `json:"price"`
-	Category AssetCategory `json:"category"`
-	Address  string        `json:"address"`
-	ID       uint64        `json:"id,string"`
-	Amount   uint64        `json:"amount,string"`
-	Deciamls int64         `json:"decimals"`
-}
-
 type Token struct {
 	TokenAddress     string  `json:"token_address"`
 	Symbol           string  `json:"symbol"`
@@ -223,7 +211,7 @@ func (s *Server) dbFetchAssets(ctx context.Context, chain string, address string
 	`, chain, address)
 
 	var assetsJSON []byte
-	err := row.Scan(assetsJSON)
+	err := row.Scan(&assetsJSON)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return &Assets{}, nil
@@ -320,10 +308,11 @@ func (s *Server) refreshAssets(ctx context.Context, chain string, address string
 				$1,
 				$2,
 				$3
-			)
+			) ON CONFLICT (chain, address) DO UPDATE SET
+				assets = excluded.assets
 		`, chain, address, assetsJSON)
 	if err != nil {
-		return fmt.Errorf("insert new nfts: %w", err)
+		return fmt.Errorf("insert new assets: %w", err)
 	}
 
 	err = tx.Commit()
@@ -387,6 +376,9 @@ func (s *Server) migrateDB(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	_, err = tx.Exec(`
 		CREATE TABLE IF NOT EXISTS assets (
@@ -395,10 +387,15 @@ func (s *Server) migrateDB(ctx context.Context) error {
 			assets BLOB
 		) STRICT;
 
-		CREATE INDEX ON assets (chain, address);
+		CREATE UNIQUE INDEX IF NOT EXISTS assets_chain_address ON assets (chain, address);
 	`)
 	if err != nil {
 		return fmt.Errorf("create assets table: %w", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("commit: %w", err)
 	}
 
 	return nil
@@ -425,8 +422,8 @@ func runAPI(ctx context.Context, cmd *cli.Command) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("OPTIONS /", corsHandler)
-	mux.HandleFunc("GET /api/assets/{network}/{address}", server.assetsHandler)
-	mux.HandleFunc("GET /api/assets/{network}/{address}/refresh", server.refreshHandler)
+	mux.HandleFunc("GET /api/assets/{chain}/{address}", server.assetsHandler)
+	mux.HandleFunc("GET /api/assets/{chain}/{address}/refresh", server.refreshHandler)
 
 	slog.Log(ctx, slog.LevelInfo, "starting api", "addr", apiAddress)
 	return http.ListenAndServe(apiAddress, mux)
