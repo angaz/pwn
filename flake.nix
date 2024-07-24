@@ -65,7 +65,7 @@
             src = gitignoreSource ./.;
             subPackages = [ "cmd/api" ];
 
-            vendorHash = "";
+            vendorHash = "sha256-lL1gRvVaRNC2cPYx/X2iEO83D6vv3fVlg7aFIsLGXn4=";
 
             doCheck = false;
 
@@ -105,7 +105,6 @@
             golangci-lint
             nix-prefetch
             bun
-            postgresql_16
           ];
         };
       };
@@ -122,7 +121,7 @@
           options.services.pwn = {
             enable = mkEnableOption (self.flake.description);
 
-            hostName = mkOption {
+            hostname = mkOption {
               type = types.str;
               default = "localhost";
               description = "Hostname to serve the PWN website on.";
@@ -181,6 +180,12 @@
                 default = "127.0.0.1:10000";
                 description = "Listen address for the API server.";
               };
+
+              metricsAddress = mkOption {
+                type = types.str;
+                default = "127.0.0.1:9001";
+                description = "Listen address for the metrics server.";
+              };
             };
           };
 
@@ -197,7 +202,6 @@
                     args = [
                       "--api-addr=${apiAddress}"
                       "--metrics-addr=${cfg.api.metricsAddress}"
-                      "--postgres=\"host=/var/run/postgresql user=pwn database=pwn pool_max_conns=${toString cfg.api.maxPoolConns}\""
                     ];
                   in
                   "${pkgs.pwnAPI}/bin/pwn-api api ${concatStringsSep " " args}";
@@ -218,7 +222,7 @@
               nginx = {
                 enable = true;
                 upstreams.pwnAPI.servers."${apiAddress}" = { };
-                virtualHosts."${cfg.hostName}" = mkMerge [
+                virtualHosts."${cfg.hostname}" = mkMerge [
                   cfg.nginx
                   {
                     locations = {
@@ -227,7 +231,7 @@
                       };
                       "/" = {
                         root = "${pkgs.pwnClient}";
-                        autoIndex = true;
+                        index = "index.html";
                       };
                     };
                   }
