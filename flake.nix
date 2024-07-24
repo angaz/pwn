@@ -55,7 +55,7 @@
             phases = [ "unpackPhase" "installPhase" ];
             installPhase = ''
               mkdir -p $out
-              cp $src $out
+              cp -r $src $out
             '';
           };
           pwnAPI = pkgs.buildGo122Module {
