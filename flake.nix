@@ -55,7 +55,7 @@
             phases = [ "unpackPhase" "installPhase" ];
             installPhase = ''
               mkdir -p $out
-              cp -r $src $out
+              cp -r $src/* $out
             '';
           };
           pwnAPI = pkgs.buildGo122Module {
@@ -201,10 +201,10 @@
                   let
                     args = [
                       "--api-addr=${apiAddress}"
-                      "--metrics-addr=${cfg.api.metricsAddress}"
+                      # "--metrics-addr=${cfg.api.metricsAddress}"
                     ];
                   in
-                  "${pkgs.pwnAPI}/bin/pwn-api api ${concatStringsSep " " args}";
+                  "${pkgs.pwnAPI}/bin/api api ${concatStringsSep " " args}";
 
                   WorkingDirectory = cfg.stateDir;
                   StateDirectory = optional (cfg.stateDir == /var/lib/pwn_api) "pwn_api";

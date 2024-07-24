@@ -403,7 +403,7 @@ func (s *Server) migrateDB(ctx context.Context) error {
 
 func runAPI(ctx context.Context, cmd *cli.Command) error {
 	apiAddress := cmd.String("api-addr")
-	moralisAPIToken := cmd.String("moralis-api-token")
+	moralisAPIToken := strings.TrimSpace(cmd.String("moralis-api-token"))
 
 	database, err := sql.Open("sqlite", "pwn.sqlite")
 	if err != nil {
